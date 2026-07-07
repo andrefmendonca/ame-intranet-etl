@@ -314,10 +314,16 @@ def t_reajuste_planos_antigos(path: Path) -> list[dict]:
     ciclo 2013 (alienou a carteira em 2014); Porto Seguro apenas em 2006 (resíduo).
     Nos ciclos 2005 e 2006 o valor é o "percentual final", que embute resíduo de
     anos anteriores — a composição fica em `observacao`, para não ser mal aplicado.
-    Série publicada pela ANS: ciclos 2005–2020, grão operadora × ciclo. O ciclo é
-    ancorado em julho (junho, para a Amil); `periodo_aplicacao` traz a vigência
-    exata, determinante para casar com o mês de aniversário do contrato. Seed
-    versionado — não há PDA estruturado para este dado na base de Dados Abertos.
+    Série ANS: ciclos 2005–2026, grão operadora × ciclo. Fonte de 2005–2020 no
+    "Histórico … por Termo de Compromisso" (página congelada em maio/2021); 2021–2025
+    na página mantida "Reajustes de preços de planos de saúde antigos" (metodologia
+    VCMH Teto por tipo de operadora desde 2013); 2026 na 639ª Reunião da Diretoria
+    Colegiada. Pós-2020 restam quatro signatárias (Bradesco, Sul América, Itaúseg,
+    Amil); Golden Cross saiu em 2014 e Porto Seguro só teve resíduo em 2006. Em 2021
+    o teto foi negativo (ciclo COVID-19). O ciclo é ancorado em julho (junho, para a
+    Amil); `periodo_aplicacao` traz a vigência exata, determinante para casar com o
+    mês de aniversário do contrato. Seed versionado — não há PDA estruturado para
+    este dado na base de Dados Abertos.
     """
     out: list[dict] = []
     with open(path, newline="", encoding="utf-8") as f:
