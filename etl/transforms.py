@@ -273,3 +273,29 @@ def t_operadoras(path_ativas: Path, path_canceladas: Path) -> list[dict]:
     consolidado = _ler(path_canceladas, "Cancelada")
     consolidado.update(_ler(path_ativas, "Ativa"))
     return list(consolidado.values())
+
+
+def t_indice_individual(path: Path) -> list[dict]:
+    """Índice de reajuste anual dos planos individuais/familiares novos (ANS).
+
+    Teto máximo autorizado pela ANS para contratos individuais/familiares
+    firmados a partir de 01/01/1999 ou adaptados à Lei nº 9.656/98. Série
+    curta e de atualização anual — mantida como seed versionado no repositório
+    (não há PDA estruturado para este índice na base de Dados Abertos da ANS).
+    O percentual pode ser negativo (ciclo 2021, reajuste negativo pós-Covid).
+    A vigência (maio do ciclo a abril do ano seguinte) é determinística e
+    derivada na apresentação a partir do ciclo.
+    """
+    out: list[dict] = []
+    with open(path, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f, delimiter=";"):
+            ciclo = _inteiro(r.get("ciclo"))
+            if ciclo is None:
+                continue
+            out.append({
+                "ciclo": ciclo,
+                "percentual": _num(r.get("percentual")),
+                "observacao": _txt(r.get("observacao")),
+                "fonte": _txt(r.get("fonte")),
+            })
+    return out

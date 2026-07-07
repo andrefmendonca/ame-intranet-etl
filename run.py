@@ -7,12 +7,12 @@ Uso:
   python run.py --dry --local /tmp    # desenvolvimento: sem rede/escrita, CSVs em out/
   python run.py --fase ntrp           # executa uma única fase
 
-Fases: produtos, operadoras, pool, ntrp, rpc (ordem padrão).
+Fases: produtos, operadoras, indice_individual, pool, ntrp, rpc (ordem padrão).
 Saída ≠ 0 quando qualquer fase falha (o Actions fica vermelho); as fases
 independentes prosseguem e cada uma registra proveniência em ans_cargas.
 """
 from __future__ import annotations
-import argparse, sys, traceback
+import argparse, hashlib, sys, traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,7 +20,9 @@ from etl.config import FONTES
 from etl import fontes, transforms
 from etl.carga import upsert, prune, registrar_carga
 
-FASES = ["produtos", "operadoras", "pool", "ntrp", "rpc"]
+SEED_DIR = Path(transforms.__file__).parent / "seeds"
+
+FASES = ["produtos", "operadoras", "indice_individual", "pool", "ntrp", "rpc"]
 
 
 def main() -> int:
@@ -58,6 +60,17 @@ def main() -> int:
                 registrar_carga("CADOP operadoras", pa["url"], pa["sha256"],
                                 n, "ok", detalhe=f"ativas+canceladas; sha canceladas {pc['sha256'][:12]}",
                                 dry=args.dry)
+                resumo.append((fase, n))
+
+            elif fase == "indice_individual":
+                seed = SEED_DIR / "indice_individual.csv"
+                linhas = transforms.t_indice_individual(seed)
+                sha = hashlib.sha256(seed.read_bytes()).hexdigest()
+                n = upsert("ans_indice_individual", linhas, "ciclo", run_ts, args.dry)
+                prune("ans_indice_individual", run_ts, dry=args.dry)
+                registrar_carga("SEED indice individual (ANS)",
+                                "repo:etl/seeds/indice_individual.csv", sha,
+                                n, "ok", dry=args.dry)
                 resumo.append((fase, n))
 
             elif fase == "pool":
