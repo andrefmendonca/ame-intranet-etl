@@ -1,0 +1,40 @@
+name: ETL ANS
+
+on:
+  schedule:
+    - cron: "0 6 5 * *"
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "Recarga histórica completa (primeiro run ou reconstrução)"
+        type: boolean
+        default: false
+
+jobs:
+  etl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 170
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Executar ETL
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          python run.py ${{ (github.event_name == 'workflow_dispatch' && inputs.backfill) && '--backfill' || '' }}
+
+      - name: Publicar artefatos de diagnóstico
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: etl-out
+          path: out/
+          if-no-files-found: ignore
