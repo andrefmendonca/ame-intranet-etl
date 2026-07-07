@@ -15,15 +15,12 @@ from pathlib import Path
 import requests
 
 OUT = Path("out")
-ANON = ("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-        "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRoa2N2andnZWtuZXZleGx0d2RnIiwi"
-        "cm9sZSI6ImFub24iLCJpYXQiOjE3ODMzOTEzMTAsImV4cCI6MjA5ODk2NzMxMH0."
-        "ZU67b2O7-StvJR-ATrLY57qZki6ns8_5mlKLG_I-2rk")
+ANON = os.environ["SUPABASE_ANON_KEY"].strip()
 
 
 def _rpc(funcao: str, corpo: dict) -> requests.Response:
     url = os.environ["SUPABASE_URL"].rstrip("/")
-    token = os.environ["SUPABASE_SERVICE_KEY"]  # token do ETL (não é mais a service_role)
+    token = os.environ["SUPABASE_SERVICE_KEY"].strip()  # token do ETL
     h = {"apikey": ANON, "Authorization": f"Bearer {ANON}",
          "Content-Type": "application/json"}
     dados = json.dumps({"p_token": token, **corpo}, default=str)
