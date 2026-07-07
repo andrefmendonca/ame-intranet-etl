@@ -1,45 +1,62 @@
-"""Carga v2 — escrita via funções RPC autenticadas por token do ETL.
+"""Carga v3 — escrita via funções RPC autenticadas por token do ETL.
 
-A service_role foi aposentada deste repositório: as escritas passam pelas
-funções public.etl_gravar / etl_podar / etl_registrar (SECURITY DEFINER),
-que validam um token privado e só alcançam as seis tabelas da fundação —
-menor privilégio que a chave-mestra, mesmo padrão last-good de antes.
+Reescrita limpa (sem edições sobrepostas). As escritas passam pelas funções
+public.etl_gravar / etl_podar / etl_registrar (SECURITY DEFINER), que validam
+um token privado e só alcançam as seis tabelas da fundação.
 
-O secret SUPABASE_SERVICE_KEY do GitHub passa a guardar o TOKEN do ETL
-(o mesmo valor inserido em private.etl_token via Lovable). A chave pública
-de leitura (publishable) é embutida abaixo — pública por construção.
+Credenciais, todas via ambiente (secrets do GitHub Actions):
+  • SUPABASE_URL          — Project URL do Supabase;
+  • SUPABASE_ANON_KEY     — chave pública de leitura (header apikey/Authorization);
+  • SUPABASE_SERVICE_KEY  — TOKEN do ETL (corpo p_token; não é a service_role).
+
+O modo --dry não escreve nada remoto: materializa CSVs em out/ para inspeção.
 """
 from __future__ import annotations
-import csv, json, os, time
+import csv
+import json
+import os
+import sys
+import time
 from pathlib import Path
+
 import requests
 
 OUT = Path("out")
-ANON = os.environ["SUPABASE_ANON_KEY"].strip()
+
+
+def _amb(nome: str) -> str:
+    v = os.environ.get(nome, "")
+    return v.strip()
 
 
 def _rpc(funcao: str, corpo: dict) -> requests.Response:
-    url = os.environ["SUPABASE_URL"].rstrip("/")
-    token = os.environ["SUPABASE_SERVICE_KEY"].strip()  # token do ETL
-    h = {"apikey": ANON, "Authorization": f"Bearer {ANON}",
-         "Content-Type": "application/json"}
+    url = _amb("SUPABASE_URL").rstrip("/")
+    anon = _amb("SUPABASE_ANON_KEY")
+    token = _amb("SUPABASE_SERVICE_KEY")
+    headers = {
+        "apikey": anon,
+        "Authorization": f"Bearer {anon}",
+        "Content-Type": "application/json",
+    }
     dados = json.dumps({"p_token": token, **corpo}, default=str)
+    resposta = None
     for tentativa in range(5):
-        r = requests.post(f"{url}/rest/v1/rpc/{funcao}", headers=h,
-                          data=dados, timeout=180)
-        if r.status_code in (200, 201, 204):
-            return r
-    if r.status_code == 401:
-        import sys, os
-        ak = os.environ.get("SUPABASE_ANON_KEY", "")
-        tk = os.environ.get("SUPABASE_SERVICE_KEY", "")
-        ur = os.environ.get("SUPABASE_URL", "")
-        print(f"[DIAG] 401 em {funcao}", file=sys.stderr)
-        print(f"[DIAG] ANON len={len(ak)} head={ak[:12]!r} tail={ak[-6:]!r} has_ws={any(c.isspace() for c in ak)}", file=sys.stderr)
-        print(f"[DIAG] TOKEN len={len(tk)} head={tk[:6]!r} tail={tk[-4:]!r} has_ws={any(c.isspace() for c in tk)}", file=sys.stderr)
-        print(f"[DIAG] URL={ur!r}", file=sys.stderr)
+        resposta = requests.post(f"{url}/rest/v1/rpc/{funcao}",
+                                 headers=headers, data=dados, timeout=180)
+        if resposta.status_code in (200, 201, 204):
+            return resposta
+        if resposta.status_code == 401 and tentativa == 0:
+            # Diagnóstico não-vazante: comprova o que o runner recebeu, sem expor segredo.
+            print(f"[DIAG] 401 em {funcao}", file=sys.stderr)
+            print(f"[DIAG] ANON len={len(anon)} head={anon[:12]!r} tail={anon[-6:]!r}",
+                  file=sys.stderr)
+            print(f"[DIAG] TOKEN len={len(token)} head={token[:6]!r} tail={token[-4:]!r}",
+                  file=sys.stderr)
+            print(f"[DIAG] URL={url!r}", file=sys.stderr)
         time.sleep(min(2 ** tentativa, 30))
-    raise RuntimeError(f"rpc {funcao}: HTTP {r.status_code} — {r.text[:300]}")
+    corpo_erro = resposta.text[:300] if resposta is not None else "sem resposta"
+    codigo = resposta.status_code if resposta is not None else "?"
+    raise RuntimeError(f"rpc {funcao}: HTTP {codigo} — {corpo_erro}")
 
 
 def upsert(tabela: str, linhas: list[dict], pk: str, dt_carga: str,
@@ -51,7 +68,8 @@ def upsert(tabela: str, linhas: list[dict], pk: str, dt_carga: str,
         if linhas:
             with open(OUT / f"{tabela}.csv", "w", newline="", encoding="utf-8") as f:
                 w = csv.DictWriter(f, fieldnames=list(linhas[0].keys()))
-                w.writeheader(); w.writerows(linhas)
+                w.writeheader()
+                w.writerows(linhas)
         return len(linhas)
     for i in range(0, len(linhas), lote):
         _rpc("etl_gravar", {"p_tabela": tabela, "p_conflito": pk,
