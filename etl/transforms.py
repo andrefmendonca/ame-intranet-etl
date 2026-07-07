@@ -299,3 +299,41 @@ def t_indice_individual(path: Path) -> list[dict]:
                 "fonte": _txt(r.get("fonte")),
             })
     return out
+
+
+def t_reajuste_planos_antigos(path: Path) -> list[dict]:
+    """Reajustes autorizados por Termo de Compromisso (TC) — planos ANTIGOS.
+
+    Aplica-se somente a contratos individuais/familiares firmados até 31/12/1998,
+    NÃO adaptados à Lei 9.656/98, cuja cláusula de reajuste seja omissa ou não
+    traga índice claro e explícito — e apenas às operadoras SIGNATÁRIAS de TC com
+    a ANS. O percentual é o TETO autorizado do ciclo; aplicá-lo acima caracteriza
+    descumprimento do TC (fundamento da revisão). Seguradoras (Bradesco, Sul
+    América, Itaúseg) partilham o mesmo teto (VCMH Teto); a Amil (Medicina de
+    Grupo) tem percentual próprio, em regra inferior. Golden Cross consta até o
+    ciclo 2013 (alienou a carteira em 2014); Porto Seguro apenas em 2006 (resíduo).
+    Nos ciclos 2005 e 2006 o valor é o "percentual final", que embute resíduo de
+    anos anteriores — a composição fica em `observacao`, para não ser mal aplicado.
+    Série publicada pela ANS: ciclos 2005–2020, grão operadora × ciclo. O ciclo é
+    ancorado em julho (junho, para a Amil); `periodo_aplicacao` traz a vigência
+    exata, determinante para casar com o mês de aniversário do contrato. Seed
+    versionado — não há PDA estruturado para este dado na base de Dados Abertos.
+    """
+    out: list[dict] = []
+    with open(path, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f, delimiter=";"):
+            ciclo = _inteiro(r.get("ciclo"))
+            reg = _txt(r.get("registro_operadora"))
+            if ciclo is None or not reg:
+                continue
+            out.append({
+                "registro_operadora": reg,
+                "operadora": _txt(r.get("operadora")),
+                "ciclo": ciclo,
+                "percentual": _num(r.get("percentual")),
+                "periodo_aplicacao": _txt(r.get("periodo_aplicacao")),
+                "oficio": _txt(r.get("oficio")),
+                "observacao": _txt(r.get("observacao")),
+                "fonte": _txt(r.get("fonte")),
+            })
+    return out

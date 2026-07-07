@@ -7,7 +7,8 @@ Uso:
   python run.py --dry --local /tmp    # desenvolvimento: sem rede/escrita, CSVs em out/
   python run.py --fase ntrp           # executa uma única fase
 
-Fases: produtos, operadoras, indice_individual, pool, ntrp, rpc (ordem padrão).
+Fases: produtos, operadoras, indice_individual, reajuste_planos_antigos,
+         pool, ntrp, rpc (ordem padrão).
 Saída ≠ 0 quando qualquer fase falha (o Actions fica vermelho); as fases
 independentes prosseguem e cada uma registra proveniência em ans_cargas.
 """
@@ -22,7 +23,8 @@ from etl.carga import upsert, prune, registrar_carga
 
 SEED_DIR = Path(transforms.__file__).parent / "seeds"
 
-FASES = ["produtos", "operadoras", "indice_individual", "pool", "ntrp", "rpc"]
+FASES = ["produtos", "operadoras", "indice_individual",
+         "reajuste_planos_antigos", "pool", "ntrp", "rpc"]
 
 
 def main() -> int:
@@ -70,6 +72,18 @@ def main() -> int:
                 prune("ans_indice_individual", run_ts, dry=args.dry)
                 registrar_carga("SEED indice individual (ANS)",
                                 "repo:etl/seeds/indice_individual.csv", sha,
+                                n, "ok", dry=args.dry)
+                resumo.append((fase, n))
+
+            elif fase == "reajuste_planos_antigos":
+                seed = SEED_DIR / "reajuste_planos_antigos.csv"
+                linhas = transforms.t_reajuste_planos_antigos(seed)
+                sha = hashlib.sha256(seed.read_bytes()).hexdigest()
+                n = upsert("ans_reajuste_planos_antigos", linhas,
+                           "registro_operadora,ciclo", run_ts, args.dry)
+                prune("ans_reajuste_planos_antigos", run_ts, dry=args.dry)
+                registrar_carga("SEED reajuste planos antigos por TC (ANS)",
+                                "repo:etl/seeds/reajuste_planos_antigos.csv", sha,
                                 n, "ok", dry=args.dry)
                 resumo.append((fase, n))
 
