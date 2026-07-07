@@ -227,3 +227,49 @@ def t_rpc(paths: list[Path], workdir: Path) -> tuple[list[dict], list[dict], lis
             if hasattr(v, "isoformat"):
                 reg[k] = v.isoformat()
     return agregado, brutos, anos
+
+
+def t_operadoras(path_ativas: Path, path_canceladas: Path) -> list[dict]:
+    """Cadastro de operadoras (CADOP ativas + canceladas).
+
+    Canceladas entram primeiro; ativas sobrescrevem por registro (se uma
+    operadora constar em ambos os arquivos, prevalece o cadastro ativo).
+    Registro vem zero-padded na fonte (ex.: "005711") — preservado como texto.
+    """
+    def _ler(path: Path, situacao: str) -> dict[str, dict]:
+        out: dict[str, dict] = {}
+        with open(path, newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f, delimiter=";"):
+                reg = _txt(r.get("REGISTRO_OPERADORA"))
+                if not reg:
+                    continue
+                out[reg] = {
+                    "registro_operadora": reg.zfill(6),
+                    "cnpj": _txt(r.get("CNPJ")),
+                    "razao_social": _txt(r.get("Razao_Social")),
+                    "nome_fantasia": _txt(r.get("Nome_Fantasia")),
+                    "modalidade": _txt(r.get("Modalidade")),
+                    "logradouro": _txt(r.get("Logradouro")),
+                    "numero": _txt(r.get("Numero")),
+                    "complemento": _txt(r.get("Complemento")),
+                    "bairro": _txt(r.get("Bairro")),
+                    "cidade": _txt(r.get("Cidade")),
+                    "uf": _txt(r.get("UF")),
+                    "cep": _txt(r.get("CEP")),
+                    "ddd": _txt(r.get("DDD")),
+                    "telefone": _txt(r.get("Telefone")),
+                    "fax": _txt(r.get("Fax")),
+                    "endereco_eletronico": _txt(r.get("Endereco_eletronico")),
+                    "representante": _txt(r.get("Representante")),
+                    "cargo_representante": _txt(r.get("Cargo_Representante")),
+                    "regiao_comercializacao": _inteiro(r.get("Regiao_de_Comercializacao")),
+                    "dt_registro_ans": _data_iso(r.get("Data_Registro_ANS")),
+                    "dt_descredenciamento": _data_iso(r.get("Data_Descredenciamento")),
+                    "motivo_descredenciamento": _txt(r.get("Motivo_do_Descredenciamento")),
+                    "situacao": situacao,
+                }
+        return out
+
+    consolidado = _ler(path_canceladas, "Cancelada")
+    consolidado.update(_ler(path_ativas, "Ativa"))
+    return list(consolidado.values())

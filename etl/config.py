@@ -10,6 +10,8 @@ BASE = "https://dadosabertos.ans.gov.br/FTP/PDA"
 UA = {"User-Agent": "Mozilla/5.0 (AME-ETL/1.0; +https://ame.adv.br)"}
 
 FONTES = {
+    "operadoras_ativas": "https://dadosabertos.ans.gov.br/FTP/PDA/operadoras_de_plano_de_saude_ativas/Relatorio_cadop.csv",
+    "operadoras_canceladas": "https://dadosabertos.ans.gov.br/FTP/PDA/operadoras_de_plano_de_saude_canceladas/Relatorio_cadop_canceladas.csv",
     "produtos": f"{BASE}/caracteristicas_produtos_saude_suplementar-008/"
                 f"pda-008-caracteristicas_produtos_saude_suplementar.csv",
     "pool":     f"{BASE}/percentuais_de_reajuste_de_agrupamento-055/"

@@ -7,7 +7,7 @@ Uso:
   python run.py --dry --local /tmp    # desenvolvimento: sem rede/escrita, CSVs em out/
   python run.py --fase ntrp           # executa uma única fase
 
-Fases: produtos, pool, ntrp, rpc (ordem padrão).
+Fases: produtos, operadoras, pool, ntrp, rpc (ordem padrão).
 Saída ≠ 0 quando qualquer fase falha (o Actions fica vermelho); as fases
 independentes prosseguem e cada uma registra proveniência em ans_cargas.
 """
@@ -20,7 +20,7 @@ from etl.config import FONTES
 from etl import fontes, transforms
 from etl.carga import upsert, prune, registrar_carga
 
-FASES = ["produtos", "pool", "ntrp", "rpc"]
+FASES = ["produtos", "operadoras", "pool", "ntrp", "rpc"]
 
 
 def main() -> int:
@@ -45,6 +45,19 @@ def main() -> int:
                 prune("ans_produtos", run_ts, dry=args.dry)
                 registrar_carga("PDA-008 produtos", prov["url"], prov["sha256"],
                                 n, "ok", dry=args.dry)
+                resumo.append((fase, n))
+
+            elif fase == "operadoras":
+                pa = fontes.baixar(FONTES["operadoras_ativas"],
+                                   work / "Relatorio_cadop.csv", args.local)
+                pc = fontes.baixar(FONTES["operadoras_canceladas"],
+                                   work / "Relatorio_cadop_canceladas.csv", args.local)
+                linhas = transforms.t_operadoras(pa["path"], pc["path"])
+                n = upsert("ans_operadoras", linhas, "registro_operadora", run_ts, args.dry)
+                prune("ans_operadoras", run_ts, dry=args.dry)
+                registrar_carga("CADOP operadoras", pa["url"], pa["sha256"],
+                                n, "ok", detalhe=f"ativas+canceladas; sha canceladas {pc['sha256'][:12]}",
+                                dry=args.dry)
                 resumo.append((fase, n))
 
             elif fase == "pool":
