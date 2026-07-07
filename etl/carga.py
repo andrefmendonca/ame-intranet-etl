@@ -29,6 +29,15 @@ def _rpc(funcao: str, corpo: dict) -> requests.Response:
                           data=dados, timeout=180)
         if r.status_code in (200, 201, 204):
             return r
+    if r.status_code == 401:
+        import sys, os
+        ak = os.environ.get("SUPABASE_ANON_KEY", "")
+        tk = os.environ.get("SUPABASE_SERVICE_KEY", "")
+        ur = os.environ.get("SUPABASE_URL", "")
+        print(f"[DIAG] 401 em {funcao}", file=sys.stderr)
+        print(f"[DIAG] ANON len={len(ak)} head={ak[:12]!r} tail={ak[-6:]!r} has_ws={any(c.isspace() for c in ak)}", file=sys.stderr)
+        print(f"[DIAG] TOKEN len={len(tk)} head={tk[:6]!r} tail={tk[-4:]!r} has_ws={any(c.isspace() for c in tk)}", file=sys.stderr)
+        print(f"[DIAG] URL={ur!r}", file=sys.stderr)
         time.sleep(min(2 ** tentativa, 30))
     raise RuntimeError(f"rpc {funcao}: HTTP {r.status_code} — {r.text[:300]}")
 
