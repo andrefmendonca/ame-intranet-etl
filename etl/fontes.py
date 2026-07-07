@@ -74,6 +74,29 @@ def baixar(url: str, destino: Path, local_dir: Path | None = None,
     return {"path": destino, "sha256": sha, "linhas": linhas, "url": url}
 
 
+
+def _baixar_zip_integro(url: str, destino: Path, tentativas: int = 4) -> dict:
+    """Baixa um ZIP validando a integridade (testzip); refaz em truncamento de rede."""
+    import time as _t
+    ultimo = None
+    for k in range(tentativas):
+        try:
+            with requests.get(url, headers=UA, stream=True, timeout=900) as r:
+                r.raise_for_status()
+                with open(destino, "wb") as f:
+                    for bloco in r.iter_content(1 << 20):
+                        f.write(bloco)
+            with zipfile.ZipFile(destino) as z:
+                if z.testzip() is not None:
+                    raise zipfile.BadZipFile("CRC inválido em membro do zip")
+            sha = hashlib.sha256(destino.read_bytes()).hexdigest()
+            return {"sha256": sha, "bytes": destino.stat().st_size}
+        except (zipfile.BadZipFile, requests.RequestException, OSError) as e:
+            ultimo = e
+            _t.sleep(min(2 ** k, 20))
+    raise RuntimeError(f"zip corrompido após {tentativas} tentativas: {ultimo}")
+
+
 def obter_ntrp(workdir: Path, local_dir: Path | None = None) -> tuple[list[Path], dict]:
     """Obtém os CSVs anuais da NTRP/VCM. No modo local aceita a pasta vcm/ já extraída."""
     if local_dir and (local_dir / "vcm").is_dir():
@@ -85,7 +108,8 @@ def obter_ntrp(workdir: Path, local_dir: Path | None = None) -> tuple[list[Path]
             shutil.copyfile(a, d); _garantir_utf8(d); paths.append(d)
         return paths, {"url": f"local:{local_dir/'vcm'}", "sha256": "-", "linhas": sum(1 for _ in paths)}
     zpath = workdir / "nota_tecnica_vcm_faixa_etaria.zip"
-    prov = baixar(FONTES["ntrp_zip"], zpath, local_dir=None)
+    meta = _baixar_zip_integro(FONTES["ntrp_zip"], zpath)
+    prov = {"url": FONTES["ntrp_zip"], "sha256": meta["sha256"], "linhas": 0}
     alvo = workdir / "ntrp"; alvo.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(zpath) as z:
         z.extractall(alvo)
