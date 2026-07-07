@@ -15,7 +15,6 @@ from __future__ import annotations
 import csv
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
@@ -45,14 +44,6 @@ def _rpc(funcao: str, corpo: dict) -> requests.Response:
                                  headers=headers, data=dados, timeout=180)
         if resposta.status_code in (200, 201, 204):
             return resposta
-        if resposta.status_code == 401 and tentativa == 0:
-            # Diagnóstico não-vazante: comprova o que o runner recebeu, sem expor segredo.
-            print(f"[DIAG] 401 em {funcao}", file=sys.stderr)
-            print(f"[DIAG] ANON len={len(anon)} head={anon[:12]!r} tail={anon[-6:]!r}",
-                  file=sys.stderr)
-            print(f"[DIAG] TOKEN len={len(token)} head={token[:6]!r} tail={token[-4:]!r}",
-                  file=sys.stderr)
-            print(f"[DIAG] URL={url!r}", file=sys.stderr)
         time.sleep(min(2 ** tentativa, 30))
     corpo_erro = resposta.text[:300] if resposta is not None else "sem resposta"
     codigo = resposta.status_code if resposta is not None else "?"
