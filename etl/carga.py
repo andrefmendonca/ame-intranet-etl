@@ -1,13 +1,13 @@
-"""Carga no Supabase via PostgREST (service role) com semântica last-good.
+"""Carga v2 — escrita via funções RPC autenticadas por token do ETL.
 
-Padrão upsert-then-prune: todas as linhas do run recebem o mesmo dt_carga;
-o upsert por chave primária torna a operação idempotente e segura contra
-duplicatas; a poda (delete de dt_carga anterior) só ocorre após o upsert
-completo bem-sucedido — em falha parcial, o snapshot anterior permanece
-íntegro e a fonte é marcada como 'falha' em ans_cargas.
+A service_role foi aposentada deste repositório: as escritas passam pelas
+funções public.etl_gravar / etl_podar / etl_registrar (SECURITY DEFINER),
+que validam um token privado e só alcançam as seis tabelas da fundação —
+menor privilégio que a chave-mestra, mesmo padrão last-good de antes.
 
-Modo --dry: nenhuma escrita remota; as linhas viram CSVs em out/ para
-inspeção e validação local.
+O secret SUPABASE_SERVICE_KEY do GitHub passa a guardar o TOKEN do ETL
+(o mesmo valor inserido em private.etl_token via Lovable). A chave pública
+de leitura (publishable) é embutida abaixo — pública por construção.
 """
 from __future__ import annotations
 import csv, json, os, time
@@ -15,15 +15,25 @@ from pathlib import Path
 import requests
 
 OUT = Path("out")
+ANON = ("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+        "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRoa2N2andnZWtuZXZleGx0d2RnIiwi"
+        "cm9sZSI6ImFub24iLCJpYXQiOjE3ODMzOTEzMTAsImV4cCI6MjA5ODk2NzMxMH0."
+        "ZU67b2O7-StvJR-ATrLY57qZki6ns8_5mlKLG_I-2rk")
 
 
-def _cfg() -> tuple[str, dict]:
+def _rpc(funcao: str, corpo: dict) -> requests.Response:
     url = os.environ["SUPABASE_URL"].rstrip("/")
-    key = os.environ["SUPABASE_SERVICE_KEY"]
-    h = {"apikey": key, "Authorization": f"Bearer {key}",
-         "Content-Type": "application/json",
-         "Prefer": "resolution=merge-duplicates,return=minimal"}
-    return url, h
+    token = os.environ["SUPABASE_SERVICE_KEY"]  # token do ETL (não é mais a service_role)
+    h = {"apikey": ANON, "Authorization": f"Bearer {ANON}",
+         "Content-Type": "application/json"}
+    dados = json.dumps({"p_token": token, **corpo}, default=str)
+    for tentativa in range(5):
+        r = requests.post(f"{url}/rest/v1/rpc/{funcao}", headers=h,
+                          data=dados, timeout=180)
+        if r.status_code in (200, 201, 204):
+            return r
+        time.sleep(min(2 ** tentativa, 30))
+    raise RuntimeError(f"rpc {funcao}: HTTP {r.status_code} — {r.text[:300]}")
 
 
 def upsert(tabela: str, linhas: list[dict], pk: str, dt_carga: str,
@@ -37,41 +47,24 @@ def upsert(tabela: str, linhas: list[dict], pk: str, dt_carga: str,
                 w = csv.DictWriter(f, fieldnames=list(linhas[0].keys()))
                 w.writeheader(); w.writerows(linhas)
         return len(linhas)
-    url, h = _cfg()
-    alvo = f"{url}/rest/v1/{tabela}?on_conflict={pk}"
     for i in range(0, len(linhas), lote):
-        bloco = json.dumps(linhas[i:i + lote], default=str)
-        for tentativa in range(5):
-            r = requests.post(alvo, headers=h, data=bloco, timeout=180)
-            if r.status_code in (200, 201, 204):
-                break
-            time.sleep(min(2 ** tentativa, 30))
-        else:
-            raise RuntimeError(f"{tabela}: HTTP {r.status_code} — {r.text[:300]}")
+        _rpc("etl_gravar", {"p_tabela": tabela, "p_conflito": pk,
+                            "p_linhas": linhas[i:i + lote]})
     return len(linhas)
 
 
 def prune(tabela: str, dt_carga: str, extra: str = "", dry: bool = False) -> None:
-    """Remove o snapshot anterior (dt_carga < run atual), opcionalmente restrito
-    por filtro extra PostgREST (ex.: 'ano=gte.2025' na janela móvel do RPC)."""
     if dry:
         return
-    url, h = _cfg()
-    alvo = f"{url}/rest/v1/{tabela}?dt_carga=lt.{dt_carga}" + (f"&{extra}" if extra else "")
-    r = requests.delete(alvo, headers=h, timeout=600)
-    if r.status_code not in (200, 204):
-        raise RuntimeError(f"prune {tabela}: HTTP {r.status_code} — {r.text[:300]}")
+    ano_min = int(extra.split("gte.")[1]) if "gte." in extra else None
+    _rpc("etl_podar", {"p_tabela": tabela, "p_dt": dt_carga, "p_ano_min": ano_min})
 
 
 def registrar_carga(fonte: str, url_fonte: str, sha256: str, linhas: int,
                     status: str, detalhe: str = "", dry: bool = False) -> None:
-    registro = {"fonte": fonte, "url": url_fonte, "sha256": sha256,
-                "linhas": linhas, "status": status, "detalhe": detalhe[:900]}
     if dry:
-        print(f"  [dry] ans_cargas ← {registro}")
+        print(f"  [dry] ans_cargas ← {fonte}: {status} ({linhas} linhas)")
         return
-    url, h = _cfg()
-    r = requests.post(f"{url}/rest/v1/ans_cargas", headers=h,
-                      data=json.dumps(registro), timeout=60)
-    if r.status_code not in (200, 201, 204):
-        raise RuntimeError(f"ans_cargas: HTTP {r.status_code} — {r.text[:300]}")
+    _rpc("etl_registrar", {"p_fonte": fonte, "p_url": url_fonte,
+                           "p_sha256": sha256, "p_linhas": linhas,
+                           "p_status": status, "p_detalhe": detalhe[:900]})
